@@ -28,9 +28,9 @@ async def handle_client(reader, writer):
                 writer.write(json.dumps({"cmd": "INFO", "msg": f"Welcome {username}"}).encode())
                 await writer.drain()
 
-            # --- LOGIC BARU: SEND_BATCH (Pesan Beda-Beda) ---
+            # SEND_BATCH (pesan beda-beda)
             elif command == 'SEND_BATCH':
-                queue = request.get('queue') # List of {"to": "A", "msg": "Hai", "delay": 2}
+                queue = request.get('queue') # list of {"to": "A", "msg": "Hai", "delay": 2}
                 
                 print(f"[*] {current_user} memulai pengiriman batch...")
 
@@ -39,16 +39,16 @@ async def handle_client(reader, writer):
                     delay = item['delay']
                     specific_msg = item['msg'] # <--- Ambil pesan UNIK per target
                     
-                    # 1. Visual Countdown & Delay
+                    # 1. visual Countdown & Delay
                     if delay > 0:
-                        # Info ke Pengirim
+                        # info ke Pengirim
                         writer.write(json.dumps({
                             "cmd": "INFO", 
                             "msg": f"Server menunda {delay} detik untuk pesan ke {target_name}..."
                         }).encode())
                         await writer.drain()
 
-                        # Animasi Terminal Server
+                        # animasi terminal Server
                         print(f"   ➡️  Target: {target_name} | Delay: {delay}s")
                         for remaining in range(delay, 0, -1):
                             sys.stdout.write(f"\r      ⏳ Mengirim dalam: {remaining} detik... ")
@@ -58,12 +58,12 @@ async def handle_client(reader, writer):
                         sys.stdout.write(f"\r      🚀 Mengirim ke {target_name}!          \n")
                         sys.stdout.flush()
                     
-                    # 2. Proses Kirim Pesan
+                    # 2. proses kirim pesan
                     if target_name in connected_users:
                         packet = {
                             "cmd": "INBOX",
                             "from": current_user,
-                            "to_list": [target_name], # Karena pesan beda, ini privat (bukan group chat)
+                            "to_list": [target_name],
                             "msg": specific_msg
                         }
                         try:
@@ -76,7 +76,7 @@ async def handle_client(reader, writer):
                     else:
                         print(f"      ⚠️  {target_name} Offline")
 
-                # Konfirmasi Selesai
+                # finish here
                 writer.write(json.dumps({"cmd": "INFO", "msg": "✅ Semua pesan batch selesai."}).encode())
                 await writer.drain()
 

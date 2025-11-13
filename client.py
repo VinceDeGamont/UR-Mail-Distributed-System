@@ -43,7 +43,7 @@ async def user_interface(writer):
         choice = await aioconsole.ainput("Pilih Menu >> ")
         
         if choice == '1':
-            send_queue = [] # Menampung list target dan pesan uniknya
+            send_queue = [] # list target dan pesan uniknya
             
             print("\n--- Setup Penerima & Pesan ---")
             try:
@@ -56,7 +56,7 @@ async def user_interface(writer):
                     t_name = await aioconsole.ainput(f"Nama Penerima: ")
                     t_msg = await aioconsole.ainput(f"Pesan untuk {t_name}: ")
                     
-                    # Simpan sementara dengan default delay 0
+                    # simpan sementara dengan default delay 0
                     send_queue.append({
                         "to": t_name.strip(),
                         "msg": t_msg,
@@ -74,7 +74,7 @@ async def user_interface(writer):
             
             if mode == '2':
                 print("\n--- Konfigurasi Waktu ---")
-                # Loop ulang queue yang sudah dibuat untuk update delay-nya
+                # loop ulang queue yg dh dibuat untuk update delay-nya
                 for item in send_queue:
                     target_name = item['to']
                     try:
@@ -83,8 +83,8 @@ async def user_interface(writer):
                     except ValueError:
                         item['delay'] = 0
             
-            # Payload dikirim ke server
-            # Perhatikan: 'msg' sekarang ada di dalam setiap item di 'queue', bukan di luar.
+            # payload dikirim ke server
+            # 'msg' sekarang ada di dlm setiap item di 'queue', bukan di luar.
             payload = {
                 "cmd": "SEND_BATCH", 
                 "queue": send_queue
@@ -103,7 +103,7 @@ async def user_interface(writer):
             if my_inbox:
                 l = my_inbox[-1]
                 m = await aioconsole.ainput(f"Reply {l['from']}: ")
-                # Format reply disesuaikan dengan struktur BATCH
+                # format reply disesuaikan dng struktur BATCH
                 q = [{"to": l['from'], "msg": m, "delay": 0}]
                 writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": q}).encode())
                 await writer.drain()
