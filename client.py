@@ -6,7 +6,7 @@ import sys
 from datetime import datetime
 
 username = ""
-my_inbox = [] # format: [{'from': 'A', 'msg': '...', 'cc': [...]}, ...]
+my_inbox = []
 
 async def receive_messages(reader):
     while True:
@@ -17,18 +17,15 @@ async def receive_messages(reader):
             resp = json.loads(data.decode())
             
             if resp['cmd'] == "INBOX":
-                # Data pesan masuk
+                
                 inbox_data = {
                     'from': resp.get('from'),
                     'msg': resp.get('msg'),
                     'cc': resp.get('to_list', []) 
                 }
-                # 1. Simpan ke memori (my_inbox)
+                
                 my_inbox.append(inbox_data)
                 
-                # 2. Baris auto-save_to_file() TELAH DIHAPUS dari sini
-                
-                # 3. Tampilkan notifikasi
                 print(f"\n🔔 [BARU] {resp['from']}: {resp['msg']}\nCmd >> ", end="", flush=True)
                 
             elif resp['cmd'] == "INFO":
@@ -42,12 +39,13 @@ async def user_interface(writer):
     await writer.drain()
 
     while True:
-        print("\n=== MENU UTAMA === (UR-Mail)")
+        print("\n===== WELCOME TO (UR-Mail) =====")
+        print("<<-- MENU UTAMA -->>")
         print("[1] Kirim Pesan (Batch)")
         print("[2] Lihat Inbox")
         print("[3] Balas Pesan (Reply)")
-        print("[4] Export Inbox ke TXT") # <-- MENU BARU
-        print("[5] Exit")                 # <-- Digeser
+        print("[4] Export Inbox ke TXT")
+        print("[5] Exit")
         
         choice = await aioconsole.ainput("Pilih Menu >> ")
         
@@ -91,7 +89,6 @@ async def user_interface(writer):
 
         # --- [3] BALAS PESAN ---
         elif choice == '3':
-            # ... (Logika Reply tetap sama seperti sebelumnya) ...
             if not my_inbox:
                 print("Inbox kosong. Tidak ada yang bisa dibalas."); continue
             
@@ -109,19 +106,27 @@ async def user_interface(writer):
             try:
                 count_str = await aioconsole.ainput("Berapa orang yang ingin dibalas? : ")
                 count = int(count_str)
+                
                 for i in range(count):
-                    t_name = await aioconsole.ainput(f"Nama Penerima ke-{i+1}: ").strip()
+                    t_name_raw = await aioconsole.ainput(f"Nama Penerima ke-{i+1}: ")
+                    t_name = t_name_raw.strip()
+                    
                     if t_name not in valid_list:
                         print(f"Error: '{t_name}' tidak valid. Diskip."); continue
+
                     t_msg = await aioconsole.ainput(f"Pesan balasan untuk {t_name}: ")
+                    
                     send_queue.append({"to": t_name, "msg": t_msg, "delay": 0})
+                    
             except ValueError:
                 print("Input jumlah harus angka!"); continue
             
             if not send_queue:
                 print("Tidak ada balasan valid."); continue
 
-            print("\n[1] Kirim Langsung [2] Custom Schedule")
+            print("\n[1] Kirim Langsung")
+            print("[2] Custom Schedule")
+
             mode = await aioconsole.ainput("Pilihan Mode: ")
             
             if mode == '2':
@@ -135,7 +140,7 @@ async def user_interface(writer):
             await writer.drain()
             print(f"Permintaan balasan dikirim...")
 
-        # --- [4] EXPORT MAILBOX (FITUR BARU) ---
+        # --- [4] EXPORT MAILBOX ---
         elif choice == '4':
             print(f"\n--- Mengekspor Mailbox {username} ---")
             if not my_inbox:
