@@ -6,9 +6,10 @@ import sys
 from datetime import datetime
 
 username = ""
-my_inbox = []
+my_inbox = [] # format: [{'from': 'A', 'subject': 'Hi', 'msg': '...', 'read': False}, ...]
 
 async def receive_messages(reader):
+    """Selalu mendengarkan pesan masuk."""
     while True:
         try:
             data = await reader.read(2048)
@@ -17,40 +18,44 @@ async def receive_messages(reader):
             resp = json.loads(data.decode())
             
             if resp['cmd'] == "INBOX":
-                
                 inbox_data = {
                     'from': resp.get('from'),
+                    'subject': resp.get('subject', '(No Subject)'),
                     'msg': resp.get('msg'),
-                    'cc': resp.get('to_list', []) 
+                    'cc': resp.get('to_list', []),
+                    'read': False # <-- Pesan baru selalu UNREAD
                 }
-                
                 my_inbox.append(inbox_data)
                 
-                print(f"\n🔔 [BARU] {resp['from']}: {resp['msg']}\nCmd >> ", end="", flush=True)
+                print(f"\n🔔 [PESAN BARU] Dari: {inbox_data['from']} | Subject: {inbox_data['subject']}\nCmd >> ", end="", flush=True)
                 
             elif resp['cmd'] == "INFO":
                 print(f"\n[SERVER]: {resp['msg']}")
         except: break
 
 async def user_interface(writer):
+    """Menangani input dan menu user."""
     global username
     username = await aioconsole.ainput("Username: ")
     writer.write(json.dumps({"cmd": "LOGIN", "username": username}).encode())
     await writer.drain()
 
     while True:
-        print("\n===== WELCOME TO (UR-Mail) =====")
-        print("<<-- MENU UTAMA -->>")
+        # --- MENU DI-UPDATE (DIGABUNG & RENUMBER) ---
+        print("\n===== WELCOME TO UR-MAIL ===== ")
+        print("\n=== MENU UTAMA === ")
         print("[1] Kirim Pesan (Batch)")
-        print("[2] Lihat Inbox")
-        print("[3] Balas Pesan (Reply)")
-        print("[4] Export Inbox ke TXT")
-        print("[5] Exit")
+        print("[2] Inbox & Baca Pesan")    # <-- DIGABUNG
+        print("[3] Balas Pesan (Reply)")   # <-- RENUMBER
+        print("[4] Forward Pesan")         # <-- RENUMBER
+        print("[5] Export Inbox ke TXT")   # <-- RENUMBER
+        print("[6] Exit")                  # <-- RENUMBER
         
         choice = await aioconsole.ainput("Pilih Menu >> ")
         
         # --- [1] KIRIM PESAN ---
         if choice == '1':
+            # ... (LOGIKA INI TETAP SAMA, TIDAK DIUBAH) ...
             send_queue = []
             print("\n--- Setup Penerima & Pesan ---")
             try:
@@ -59,8 +64,11 @@ async def user_interface(writer):
                 for i in range(count):
                     print(f"\n--- Target ke-{i+1} ---")
                     t_name = await aioconsole.ainput(f"Nama Penerima: ")
+                    t_subject = await aioconsole.ainput(f"Subject untuk {t_name}: ")
                     t_msg = await aioconsole.ainput(f"Pesan untuk {t_name}: ")
-                    send_queue.append({"to": t_name.strip(), "msg": t_msg, "delay": 0})
+                    send_queue.append({
+                        "to": t_name.strip(), "subject": t_subject, "msg": t_msg, "delay": 0
+                    })
             except ValueError:
                 print("Input jumlah harus angka!"); continue
             
@@ -80,101 +88,162 @@ async def user_interface(writer):
             await writer.drain()
             print(f"Permintaan batch dikirim...")
 
-        # --- [2] LIHAT INBOX ---
+        # --- [2] LIHAT INBOX & BACA PESAN (DIGABUNG) ---
         elif choice == '2':
             print(f"\n=== INBOX {username} ===")
-            if not my_inbox: print("(Kosong)")
-            for i, m in enumerate(my_inbox): 
-                print(f"{i+1}. Dari: {m['from']} | Pesan: {m['msg']}")
-
-        # --- [3] BALAS PESAN ---
-        elif choice == '3':
             if not my_inbox:
-                print("Inbox kosong. Tidak ada yang bisa dibalas."); continue
-            
-            valid_targets = set()
-            for mail in my_inbox:
-                valid_targets.add(mail['from'])
-                for person in mail.get('cc', []):
-                    if person != username: valid_targets.add(person)
-            
-            valid_list = list(valid_targets)
-            print("\n--- Fitur Balas Pesan ---")
-            print(f"Bisa membalas ke: {', '.join(valid_list)}")
-            
-            send_queue = []
-            try:
-                count_str = await aioconsole.ainput("Berapa orang yang ingin dibalas? : ")
-                count = int(count_str)
+                print("(Inbox Kosong)")
+                continue # Langsung kembali ke menu utama jika kosong
                 
-                for i in range(count):
-                    t_name_raw = await aioconsole.ainput(f"Nama Penerima ke-{i+1}: ")
-                    t_name = t_name_raw.strip()
+            # 1. Tampilkan daftar inbox
+            for i, m in enumerate(my_inbox): 
+                status = "[UNREAD]" if not m['read'] else "[ READ ]"
+                print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
+            
+            print("---------------------------------")
+            
+            # 2. Langsung tawarkan untuk membaca
+            try:
+                idx_str = await aioconsole.ainput("Masukkan nomor pesan yang ingin dibuka (0=Kembali): ")
+                idx = int(idx_str) - 1 # (user input 1, artinya index 0)
+                
+                if idx == -1: # User pilih 0 (Kembali)
+                    continue
+                
+                if 0 <= idx < len(my_inbox):
+                    mail = my_inbox[idx]
+                    mail['read'] = True # <-- Langsung tandai sudah dibaca
                     
-                    if t_name not in valid_list:
-                        print(f"Error: '{t_name}' tidak valid. Diskip."); continue
-
-                    t_msg = await aioconsole.ainput(f"Pesan balasan untuk {t_name}: ")
-                    
-                    send_queue.append({"to": t_name, "msg": t_msg, "delay": 0})
+                    # Tampilkan isi pesan
+                    print("\n--- [Membaca Pesan] ---")
+                    print(f"Dari    : {mail['from']}")
+                    print(f"Subject : {mail['subject']}")
+                    print("-------------------------")
+                    print(f"Pesan   : {mail['msg']}")
+                    print("-------------------------")
+                    await aioconsole.ainput("Tekan Enter untuk kembali ke menu...")
+                else:
+                    print("Nomor pesan tidak valid.")
                     
             except ValueError:
-                print("Input jumlah harus angka!"); continue
-            
-            if not send_queue:
-                print("Tidak ada balasan valid."); continue
+                print("Input harus angka.")
 
-            print("\n[1] Kirim Langsung")
-            print("[2] Custom Schedule")
-
-            mode = await aioconsole.ainput("Pilihan Mode: ")
+        # --- [3] BALAS PESAN (REPLY) (RENUMBER) ---
+        elif choice == '3':
+            print(f"\n--- Balas Pesan ---")
+            if not my_inbox: print("Inbox kosong."); continue
             
-            if mode == '2':
-                for item in send_queue:
-                    try:
-                        d_str = await aioconsole.ainput(f"Delay balasan ke '{item['to']}' (detik): ")
-                        item['delay'] = int(d_str)
-                    except ValueError: item['delay'] = 0
+            # Tampilkan inbox dulu
+            for i, m in enumerate(my_inbox):
+                status = "[UNREAD]" if not m['read'] else "[ READ ]"
+                print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
             
-            writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
-            await writer.drain()
-            print(f"Permintaan balasan dikirim...")
+            try:
+                idx_str = await aioconsole.ainput("Balas pesan nomor berapa? (0=Batal): ")
+                idx = int(idx_str) - 1
+                if idx == -1: continue
+                
+                if 0 <= idx < len(my_inbox):
+                    original_mail = my_inbox[idx]
+                    target_name = original_mail['from']
+                    
+                    print(f"Membalas ke: {target_name}")
+                    t_subject = f"Re: {original_mail['subject']}"
+                    print(f"Subject (Otomatis): {t_subject}")
+                    t_msg = await aioconsole.ainput(f"Pesan balasan: ")
+                    
+                    send_queue = [{"to": target_name, "subject": t_subject, "msg": t_msg, "delay": 0}]
+                    writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
+                    await writer.drain()
+                    print("Balasan terkirim.")
+                else:
+                    print("Nomor pesan tidak valid.")
+            except ValueError:
+                print("Input harus angka.")
 
-        # --- [4] EXPORT MAILBOX ---
+        # --- [4] FORWARD PESAN (RENUMBER) ---
         elif choice == '4':
+            print(f"\n--- Forward Pesan ---")
+            if not my_inbox: print("Inbox kosong."); continue
+
+            for i, m in enumerate(my_inbox):
+                status = "[UNREAD]" if not m['read'] else "[ READ ]"
+                print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
+            
+            try:
+                idx_str = await aioconsole.ainput("Forward pesan nomor berapa? (0=Batal): ")
+                idx = int(idx_str) - 1
+                if idx == -1: continue
+
+                if 0 <= idx < len(my_inbox):
+                    original_mail = my_inbox[idx]
+                    fwd_subject = f"Fwd: {original_mail['subject']}"
+                    fwd_msg_body = (
+                        f"\n--- Pesan Asli ---\n"
+                        f"Dari: {original_mail['from']}\n"
+                        f"Pesan: {original_mail['msg']}\n"
+                        f"------------------"
+                    )
+                    
+                    print(f"Subject (Otomatis): {fwd_subject}")
+                    
+                    send_queue = []
+                    count_str = await aioconsole.ainput("Berapa orang yang ingin dikirim? : ")
+                    count = int(count_str)
+                    
+                    for i in range(count):
+                        t_name = await aioconsole.ainput(f"Forward ke (Target {i+1}): ")
+                        send_queue.append({
+                            "to": t_name.strip(), "subject": fwd_subject, "msg": fwd_msg_body, "delay": 0
+                        })
+                    
+                    print("\n[1] Kirim Langsung [2] Custom Schedule")
+                    mode = await aioconsole.ainput("Pilihan Mode: ")
+                    if mode == '2':
+                        for item in send_queue:
+                            d_str = await aioconsole.ainput(f"Delay ke '{item['to']}' (detik): ")
+                            try:
+                                item['delay'] = int(d_str)
+                            except ValueError: item['delay'] = 0
+                    
+                    writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
+                    await writer.drain()
+                    print("Pesan di-forward...")
+                else:
+                    print("Nomor pesan tidak valid.")
+            except ValueError:
+                print("Input harus angka.")
+
+        # --- [5] EXPORT MAILBOX (RENUMBER) ---
+        elif choice == '5':
             print(f"\n--- Mengekspor Mailbox {username} ---")
             if not my_inbox:
-                print("Inbox kosong. Tidak ada yang diekspor.")
-                continue
+                print("Inbox kosong."); continue
             
             filename = f"{username}_mailbox_export.txt"
             try:
-                # Mode 'w' (write) akan menimpa file lama jika ada (full export)
                 with open(filename, "w", encoding="utf-8") as f:
                     f.write(f"=== Arsip Mailbox untuk {username} ===\n")
-                    f.write(f"Diekspor pada: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write("=======================================\n\n")
+                    f.write(f"Diekspor pada: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                     
-                    # Loop semua pesan di memori (my_inbox)
                     for i, mail in enumerate(my_inbox):
-                        sender = mail.get('from', 'Unknown')
-                        message = mail.get('msg', '(Pesan kosong)')
                         f.write(f"--- Pesan #{i+1} ---\n")
-                        f.write(f"Dari: {sender}\n")
-                        f.write(f"Pesan: {message}\n")
-                        f.write("----------------------\n\n")
+                        f.write(f"Status: {'UNREAD' if not mail['read'] else 'READ'}\n")
+                        f.write(f"Dari: {mail.get('from', 'Unknown')}\n")
+                        f.write(f"Subject: {mail.get('subject', 'N/A')}\n")
+                        f.write(f"Pesan: {mail.get('msg', '(Kosong)')}\n")
+                        f.write("---------------------\n\n")
                 
-                print(f"✅ Berhasil! Inbox telah diekspor ke file: {filename}")
+                print(f"✅ Berhasil! Inbox diekspor ke: {filename}")
                 
             except Exception as e:
                 print(f"❌ Gagal mengekspor file: {e}")
 
-        # --- [5] EXIT ---
-        elif choice == '5': 
-            print("Keluar dari UR-Mail...")
-            sys.exit()
+        # --- [6] EXIT (RENUMBER) ---
+        elif choice == '6': 
+            print("Keluar dari UR-Mail..."); sys.exit()
 
-# ... (Sisa kode: async def main dan if __name__ == '__main__' tetap sama) ...
+# --- (async def main dan if __name__ == '__main__' tetap sama) ---
 async def main(host, port):
     print(f"Menghubungkan ke Server {host}:{port} ...")
     try:
