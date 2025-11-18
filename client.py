@@ -44,14 +44,14 @@ async def user_interface(writer):
     while True:
         # --- MENU DI-UPDATE ---
         print("\n===== WELCOME TO UR-MAIL ===== ")
-        print("\n=== MENU UTAMA === ")
+        print(f"\n=== MENU UTAMA (User: {username}) ===") 
         print("[1] Kirim Pesan (Batch)")
         print("[2] Inbox & Baca Pesan")
         print("[3] Lihat Pesan Terkirim (Outbox)") 
         print("[4] Balas Pesan (Reply)")           
         print("[5] Forward Pesan")                 
         print("[6] Hapus Pesan")                   
-        print("[7] Export Inbox ke TXT")           
+        print("[7] Export Mailbox ke TXT")
         print("[8] Exit")                          
         
         choice = await aioconsole.ainput("Pilih Menu >> ")
@@ -142,7 +142,7 @@ async def user_interface(writer):
             for i, m in enumerate(my_outbox):
                 print(f"{i+1}. Ke: {m['to']} | Subject: {m['subject']} | Delay: {m['delay']}s")
                 # Jika ingin lihat isinya juga:
-                print(f"   Pesan: {m['msg']}\n")
+                print(f"    Pesan: {m['msg']}\n")
             
             print("------------------------------------")
             await aioconsole.ainput("Tekan Enter untuk kembali ke menu...")
@@ -221,7 +221,8 @@ async def user_interface(writer):
                             "to": t_name.strip(), "subject": fwd_subject, "msg": fwd_msg_body, "delay": 0
                         })
                     
-                    print("\n[1] Kirim Langsung [2] Custom Schedule")
+                    print("\n[1] Kirim Langsung (Instant)")
+                    print("[2] Custom Schedule (Delay per orang)\n")
                     mode = await aioconsole.ainput("Pilihan Mode: ")
                     if mode == '2':
                         for item in send_queue:
@@ -243,7 +244,7 @@ async def user_interface(writer):
             except ValueError:
                 print("Input harus angka.")
 
-        # --- [6] HAPUS PESAN (FITUR BARU) ---
+        # --- [6] HAPUS PESAN ---
         elif choice == '6':
             print(f"\n--- Hapus Pesan dari Inbox ---")
             if not my_inbox:
@@ -260,7 +261,7 @@ async def user_interface(writer):
                 idx_str = await aioconsole.ainput("Masukkan nomor pesan yang ingin dihapus (0=Batal): ")
                 idx = int(idx_str) - 1 # (user input 1, artinya index 0)
                 
-                if idx == -1: # User pilih 0 (Batal)
+                if idx == -1:
                     continue
                 
                 if 0 <= idx < len(my_inbox):
@@ -275,8 +276,10 @@ async def user_interface(writer):
         # --- [7] EXPORT MAILBOX ---
         elif choice == '7':
             print(f"\n--- Mengekspor Mailbox {username} ---")
-            if not my_inbox:
-                print("Inbox kosong."); continue
+            
+            # Ubah kondisi ini agar tetap bisa export walaupun salah satu kosong
+            if not my_inbox and not my_outbox:
+                print("Inbox dan Outbox kosong. Tidak ada yang bisa diekspor."); continue
             
             filename = f"{username}_mailbox_export.txt"
             try:
@@ -284,15 +287,33 @@ async def user_interface(writer):
                     f.write(f"=== Arsip Mailbox untuk {username} ===\n")
                     f.write(f"Diekspor pada: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                     
-                    for i, mail in enumerate(my_inbox):
-                        f.write(f"--- Pesan #{i+1} ---\n")
-                        f.write(f"Status: {'UNREAD' if not mail['read'] else 'READ'}\n")
-                        f.write(f"Dari: {mail.get('from', 'Unknown')}\n")
-                        f.write(f"Subject: {mail.get('subject', 'N/A')}\n")
-                        f.write(f"Pesan: {mail.get('msg', '(Kosong)')}\n")
-                        f.write("---------------------\n\n")
+                    # --- Bagian Export INBOX ---
+                    f.write("========== INBOX ==========\n")
+                    if not my_inbox:
+                        f.write("(Inbox Kosong)\n\n")
+                    else:
+                        for i, mail in enumerate(my_inbox):
+                            f.write(f"--- Pesan #{i+1} ---\n")
+                            f.write(f"Status: {'UNREAD' if not mail['read'] else 'READ'}\n")
+                            f.write(f"Dari: {mail.get('from', 'Unknown')}\n")
+                            f.write(f"Subject: {mail.get('subject', 'N/A')}\n")
+                            f.write(f"Pesan: {mail.get('msg', '(Kosong)')}\n")
+                            f.write("---------------------\n\n")
+
+                    # --- Bagian Export OUTBOX ---
+                    f.write("========= OUTBOX ==========\n")
+                    if not my_outbox:
+                        f.write("(Outbox Kosong)\n\n")
+                    else:
+                        for i, m in enumerate(my_outbox):
+                            f.write(f"--- Pesan Terkirim #{i+1} ---\n")
+                            f.write(f"Ke: {m['to']}\n")
+                            f.write(f"Subject: {m['subject']}\n")
+                            f.write(f"Delay: {m['delay']}s\n")
+                            f.write(f"Pesan: {m['msg']}\n")
+                            f.write("---------------------\n\n")
                 
-                print(f"✅ Berhasil! Inbox diekspor ke: {filename}")
+                print(f"✅ Berhasil! Mailbox diekspor ke: {filename}")
                 
             except Exception as e:
                 print(f"❌ Gagal mengekspor file: {e}")
