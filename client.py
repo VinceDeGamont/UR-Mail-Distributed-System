@@ -31,7 +31,6 @@ async def receive_messages(reader):
                 }
                 my_inbox.append(inbox_data)
                 
-                # [UBAH] Mengganti 🔔 dengan '[NEW MSG]'
                 print(f"\n[NEW MSG] Dari: {inbox_data['from']} | Subject: {inbox_data['subject']}\nCmd >> ", end="", flush=True)
             
             elif resp['cmd'] == "INFO":
