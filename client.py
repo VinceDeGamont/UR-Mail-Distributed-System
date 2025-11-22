@@ -5,17 +5,20 @@ import argparse
 import sys
 from datetime import datetime
 
+# === STATE CLIENT ===
 username = ""
 my_inbox = [] 
 my_outbox = [] 
 
 async def receive_messages(reader):
-    """Selalu mendengarkan pesan masuk."""
+    """Selalu mendengarkan pesan masuk di background."""
     while True:
         try:
             data = await reader.read(2048)
             if not data:
-                print("\n[!] Disconnected."); sys.exit()
+                print("\n[!] Koneksi ke server terputus."); sys.exit()
+                break
+
             resp = json.loads(data.decode())
             
             if resp['cmd'] == "INBOX":
@@ -28,31 +31,37 @@ async def receive_messages(reader):
                 }
                 my_inbox.append(inbox_data)
                 
-                print(f"\n🔔 [PESAN BARU] Dari: {inbox_data['from']} | Subject: {inbox_data['subject']}\nCmd >> ", end="", flush=True)
-                
+                # [UBAH] Mengganti 🔔 dengan '[NEW MSG]'
+                print(f"\n[NEW MSG] Dari: {inbox_data['from']} | Subject: {inbox_data['subject']}\nCmd >> ", end="", flush=True)
+            
             elif resp['cmd'] == "INFO":
-                print(f"\n[SERVER]: {resp['msg']}")
-        except: break
+                print(f"\n[SERVER]: {resp['msg']}\nCmd >> ", end="", flush=True)
+                
+        except Exception as e:
+            # [UBAH]
+            print(f"\n[ERR] Gagal membaca data dari server: {e}")
+            sys.exit()
+            break
 
 async def user_interface(writer):
-    """Menangani input dan menu user."""
+    """Menangani input dan menu user di foreground."""
     global username
-    username = await aioconsole.ainput("Username: ")
+    
+    username = await aioconsole.ainput("Masukkan Username: ")
     writer.write(json.dumps({"cmd": "LOGIN", "username": username}).encode())
     await writer.drain()
 
     while True:
-        # --- MENU DI-UPDATE ---
         print("\n===== WELCOME TO UR-MAIL ===== ")
-        print(f"\n=== MENU UTAMA (User: {username}) ===") 
+        print(f"\n=== MENU UTAMA (User: {username}) ===")
         print("[1] Kirim Pesan (Batch)")
         print("[2] Inbox & Baca Pesan")
-        print("[3] Lihat Pesan Terkirim (Outbox)") 
-        print("[4] Balas Pesan (Reply)")           
-        print("[5] Forward Pesan")                 
-        print("[6] Hapus Pesan")                   
+        print("[3] Lihat Pesan Terkirim (Outbox)")
+        print("[4] Balas Pesan (Reply)")
+        print("[5] Forward Pesan")
+        print("[6] Hapus Pesan")
         print("[7] Export Mailbox ke TXT")
-        print("[8] Exit")                          
+        print("[8] Exit")
         
         choice = await aioconsole.ainput("Pilih Menu >> ")
         
@@ -86,23 +95,20 @@ async def user_interface(writer):
                         item['delay'] = int(d_str)
                     except ValueError: item['delay'] = 0
             
-            # Kirim ke server
             writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
             await writer.drain()
             
-            # SIMPAN KE OUTBOX LOKAL
             for item in send_queue:
                 my_outbox.append(item)
-                
             print(f"Permintaan batch dikirim...")
 
         # --- [2] LIHAT INBOX & BACA PESAN ---
         elif choice == '2':
             print(f"\n=== INBOX {username} ===")
             if not my_inbox:
-                print("(Inbox Kosong)")
-                continue 
-                
+                print("(Inbox Kosong)"); continue 
+            
+            # [UBAH] Indikator teks sederhana
             for i, m in enumerate(my_inbox): 
                 status = "[UNREAD]" if not m['read'] else "[ READ ]"
                 print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
@@ -127,7 +133,6 @@ async def user_interface(writer):
                     await aioconsole.ainput("Tekan Enter untuk kembali ke menu...")
                 else:
                     print("Nomor pesan tidak valid.")
-                    
             except ValueError:
                 print("Input harus angka.")
 
@@ -135,14 +140,11 @@ async def user_interface(writer):
         elif choice == '3':
             print(f"\n=== OUTBOX {username} (Pesan Terkirim) ===")
             if not my_outbox:
-                print("(Outbox Kosong)")
-                continue
+                print("(Outbox Kosong)"); continue
             
-            # Tampilkan semua pesan di outbox
             for i, m in enumerate(my_outbox):
                 print(f"{i+1}. Ke: {m['to']} | Subject: {m['subject']} | Delay: {m['delay']}s")
-                # Jika ingin lihat isinya juga:
-                print(f"    Pesan: {m['msg']}\n")
+                print(f"   Pesan: {m['msg']}\n")
             
             print("------------------------------------")
             await aioconsole.ainput("Tekan Enter untuk kembali ke menu...")
@@ -171,14 +173,10 @@ async def user_interface(writer):
                     t_msg = await aioconsole.ainput(f"Pesan balasan: ")
                     
                     send_queue = [{"to": target_name, "subject": t_subject, "msg": t_msg, "delay": 0}]
-                    
                     writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
                     await writer.drain()
                     
-                    # SIMPAN KE OUTBOX LOKAL
-                    for item in send_queue:
-                        my_outbox.append(item)
-                        
+                    my_outbox.append(send_queue[0])
                     print("Balasan terkirim.")
                 else:
                     print("Nomor pesan tidak valid.")
@@ -189,7 +187,7 @@ async def user_interface(writer):
         elif choice == '5':
             print(f"\n--- Forward Pesan ---")
             if not my_inbox: print("Inbox kosong."); continue
-
+            
             for i, m in enumerate(my_inbox):
                 status = "[UNREAD]" if not m['read'] else "[ READ ]"
                 print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
@@ -227,17 +225,14 @@ async def user_interface(writer):
                     if mode == '2':
                         for item in send_queue:
                             d_str = await aioconsole.ainput(f"Delay ke '{item['to']}' (detik): ")
-                            try:
-                                item['delay'] = int(d_str)
+                            try: item['delay'] = int(d_str)
                             except ValueError: item['delay'] = 0
                     
                     writer.write(json.dumps({"cmd": "SEND_BATCH", "queue": send_queue}).encode())
                     await writer.drain()
                     
-                    # SIMPAN KE OUTBOX LOKAL
                     for item in send_queue:
                         my_outbox.append(item)
-                        
                     print("Pesan di-forward...")
                 else:
                     print("Nomor pesan tidak valid.")
@@ -248,26 +243,21 @@ async def user_interface(writer):
         elif choice == '6':
             print(f"\n--- Hapus Pesan dari Inbox ---")
             if not my_inbox:
-                print("Inbox kosong. Tidak ada yang bisa dihapus.")
-                continue
+                print("Inbox kosong."); continue
             
-            # Tampilkan daftar inbox
             for i, m in enumerate(my_inbox): 
                 status = "[UNREAD]" if not m['read'] else "[ READ ]"
                 print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
             
-            print("------------------------------------")
             try:
                 idx_str = await aioconsole.ainput("Masukkan nomor pesan yang ingin dihapus (0=Batal): ")
-                idx = int(idx_str) - 1 # (user input 1, artinya index 0)
+                idx = int(idx_str) - 1
                 
-                if idx == -1:
-                    continue
+                if idx == -1: continue
                 
                 if 0 <= idx < len(my_inbox):
-                    # Hapus pesan dari list 'my_inbox'
                     deleted_mail = my_inbox.pop(idx)
-                    print(f"Pesan '{deleted_mail['subject']}' telah dihapus dari inbox.")
+                    print(f"Pesan '{deleted_mail['subject']}' telah dihapus.")
                 else:
                     print("Nomor pesan tidak valid.")
             except ValueError:
@@ -276,10 +266,8 @@ async def user_interface(writer):
         # --- [7] EXPORT MAILBOX ---
         elif choice == '7':
             print(f"\n--- Mengekspor Mailbox {username} ---")
-            
-            # Ubah kondisi ini agar tetap bisa export walaupun salah satu kosong
             if not my_inbox and not my_outbox:
-                print("Inbox dan Outbox kosong. Tidak ada yang bisa diekspor."); continue
+                print("Inbox dan Outbox kosong."); continue
             
             filename = f"{username}_mailbox_export.txt"
             try:
@@ -287,10 +275,8 @@ async def user_interface(writer):
                     f.write(f"=== Arsip Mailbox untuk {username} ===\n")
                     f.write(f"Diekspor pada: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
                     
-                    # --- Bagian Export INBOX ---
                     f.write("========== INBOX ==========\n")
-                    if not my_inbox:
-                        f.write("(Inbox Kosong)\n\n")
+                    if not my_inbox: f.write("(Inbox Kosong)\n\n")
                     else:
                         for i, mail in enumerate(my_inbox):
                             f.write(f"--- Pesan #{i+1} ---\n")
@@ -300,10 +286,8 @@ async def user_interface(writer):
                             f.write(f"Pesan: {mail.get('msg', '(Kosong)')}\n")
                             f.write("---------------------\n\n")
 
-                    # --- Bagian Export OUTBOX ---
                     f.write("========= OUTBOX ==========\n")
-                    if not my_outbox:
-                        f.write("(Outbox Kosong)\n\n")
+                    if not my_outbox: f.write("(Outbox Kosong)\n\n")
                     else:
                         for i, m in enumerate(my_outbox):
                             f.write(f"--- Pesan Terkirim #{i+1} ---\n")
@@ -313,10 +297,9 @@ async def user_interface(writer):
                             f.write(f"Pesan: {m['msg']}\n")
                             f.write("---------------------\n\n")
                 
-                print(f"✅ Berhasil! Mailbox diekspor ke: {filename}")
-                
+                print(f"[OK] Berhasil! Mailbox diekspor ke: {filename}")
             except Exception as e:
-                print(f"❌ Gagal mengekspor file: {e}")
+                print(f"[ERR] Gagal mengekspor file: {e}")
 
         # --- [8] EXIT ---
         elif choice == '8': 
@@ -327,10 +310,10 @@ async def main(host, port):
     print(f"Menghubungkan ke Server {host}:{port} ...")
     try:
         reader, writer = await asyncio.open_connection(host, port)
-        print("✅ Connected!")
+        print("[OK] Connected!")
         await asyncio.gather(receive_messages(reader), user_interface(writer))
     except Exception as e:
-        print(f"❌ Gagal Connect: {e}")
+        print(f"[ERR] Gagal Connect: {e}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="UR-Mail Client")
