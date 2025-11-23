@@ -12,11 +12,11 @@ my_outbox = []
 
 async def receive_messages(reader):
     """Selalu mendengarkan pesan masuk di background."""
-    while True:
-        try:
+    try:
+        while True:
             data = await reader.read(2048)
             if not data:
-                print("\n[!] Koneksi ke server terputus."); sys.exit()
+                print("\n[!] Koneksi ke server terputus.")
                 break
 
             resp = json.loads(data.decode())
@@ -36,11 +36,11 @@ async def receive_messages(reader):
             elif resp['cmd'] == "INFO":
                 print(f"\n[SERVER]: {resp['msg']}\nCmd >> ", end="", flush=True)
                 
-        except Exception as e:
-            # [UBAH]
-            print(f"\n[ERR] Gagal membaca data dari server: {e}")
-            sys.exit()
-            break
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"\n[ERR] Gagal membaca data dari server: {e}")
+        pass
 
 async def user_interface(writer):
     """Menangani input dan menu user di foreground."""
@@ -62,8 +62,12 @@ async def user_interface(writer):
         print("[7] Export Mailbox ke TXT")
         print("[8] Exit")
         
-        choice = await aioconsole.ainput("Pilih Menu >> ")
-        
+        try:
+            choice = await aioconsole.ainput("Pilih Menu >> ")
+        except EOFError:
+            print("\nInput ditutup. Keluar.")
+            break
+
         # --- [1] KIRIM PESAN ---
         if choice == '1':
             send_queue = []
@@ -107,7 +111,6 @@ async def user_interface(writer):
             if not my_inbox:
                 print("(Inbox Kosong)"); continue 
             
-            # [UBAH] Indikator teks sederhana
             for i, m in enumerate(my_inbox): 
                 status = "[UNREAD]" if not m['read'] else "[ READ ]"
                 print(f"{i+1}. {status} | Dari: {m['from']} | Subject: {m['subject']}")
@@ -302,17 +305,37 @@ async def user_interface(writer):
 
         # --- [8] EXIT ---
         elif choice == '8': 
-            print("Keluar dari UR-Mail..."); sys.exit()
-
+            print("Keluar dari UR-Mail...")
+            break
 
 async def main(host, port):
     print(f"Menghubungkan ke Server {host}:{port} ...")
+    reader, writer = None, None
     try:
         reader, writer = await asyncio.open_connection(host, port)
         print("[OK] Connected!")
-        await asyncio.gather(receive_messages(reader), user_interface(writer))
+        
+        receiver_task = asyncio.create_task(receive_messages(reader))
+        ui_task = asyncio.create_task(user_interface(writer))
+
+        # tunggu salah satu task selesai (biasanya UI task saat user pilih Exit)
+        done, pending = await asyncio.wait(
+            [receiver_task, ui_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        # cancel task yang masih berjalan (misal receiver_task)
+        for task in pending:
+            task.cancel()
+
     except Exception as e:
         print(f"[ERR] Gagal Connect: {e}")
+    finally:
+        if writer:
+            print("Menutup koneksi...")
+            writer.close()
+            await writer.wait_closed()
+            print("Koneksi ditutup.")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="UR-Mail Client")
@@ -325,4 +348,4 @@ if __name__ == '__main__':
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         asyncio.run(main(args.host, args.port))
     except KeyboardInterrupt:
-        pass
+        print("\nProgram dihentikan oleh user (Ctrl+C).")
