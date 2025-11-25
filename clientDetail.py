@@ -1,12 +1,12 @@
 import asyncio      # main library
 import json         # untuk format data JSON
-import aioconsole   # library untuk input di terminal yang non-blocking
+import aioconsole   # library untuk input di terminal yg non-blocking
 import argparse     # untuk argumen command line (IP Server, Port)
 import sys          # untuk operasi sistem (keluar program)
 from datetime import datetime # untuk mengambil waktu saat export file
 
 # === STATE CLIENT ===
-username = ""      # menyimpan username yang sedang login
+username = ""      # menyimpan username yg sedang login
 my_inbox = []      # list untuk simpan pesan masuk (Inbox) di memori
 my_outbox = []     # list untuk simpan pesan terkirim (Outbox) di memori
 
